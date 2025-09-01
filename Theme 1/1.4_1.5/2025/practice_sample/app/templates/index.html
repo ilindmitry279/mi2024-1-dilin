@@ -2,50 +2,38 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Expense Tracker</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 2em; background-color: #f9f9f9; color: #333; }
-        table { width: 100%; border-collapse: collapse; margin-top: 1em; }
-        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        form { margin-bottom: 2em; background-color: #fff; padding: 1.5em; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        input { margin-right: 1em; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
-        button { padding: 9px 15px; border: none; background-color: #007bff; color: white; border-radius: 4px; cursor: pointer; }
-        button:hover { background-color: #0056b3; }
-        .error { color: #d9534f; font-weight: bold; margin-bottom: 1em; }
-        .delete-btn { background: none; border: none; color: #d9534f; text-decoration: underline; cursor: pointer; padding: 0; }
-    </style>
+    <link rel="stylesheet" href="static/style.css">
+    <script src="static/app.js"></script>
 </head>
 <body>
-    <h1>Expense Tracker</h1>
-
-    <!-- (2) Form for adding a new expense -->
-    <form id="add-expense-form">
-        <h2>Add New Expense</h2>
-        <!-- (4) Placeholder for inline error messages -->
-        <div id="form-error" class="error"></div>
-        <input type="text" id="category" placeholder="Category (e.g., Food)" required>
-        <input type="number" id="amount" step="0.01" placeholder="Amount (e.g., 3.50)" required>
-        <button type="submit">Add Expense</button>
-    </form>
-
-    <!-- (1) Table to display expenses -->
-    <h2>All Expenses</h2>
-    <div id="list-error" class="error"></div>
-    <table>
-        <thead>
-            <tr>
-                <th>Category</th>
-                <th>Amount</th>
-                <th>Action</th>
-            </tr>
-        </thead>
-        <tbody id="expenses-table-body">
-            <!-- Rows will be inserted here by JavaScript -->
-        </tbody>
-    </table>
-
-    <script src="/static/app.js"></script>
+    <div class="container">
+        <h1>Expense Tracker</h1>
+        <div class="filter-section">
+            <label for="filter-category">Filter by Category:</label>
+            <input type="text" id="filter-category" placeholder="Type category to filter...">
+        </div>
+        <div id="form-error"></div>
+        <div id="list-error"></div>
+        <form id="add-expense-form" class="form-section">
+            <input type="text" id="category" placeholder="Category" required>
+            <input type="number" id="amount" placeholder="Amount" required>
+            <button type="submit">Add Expense</button>
+        </form>
+        <div class="table-section">
+            <table id="expensesTable">
+                <thead>
+                    <tr>
+                        <th id="th-category">Category</th>
+                        <th id="th-amount">Amount</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="expenses-table-body">
+                    <!-- Expenses will be populated dynamically -->
+                </tbody>
+            </table>
+        </div>
+    </div>
 </body>
 </html>
