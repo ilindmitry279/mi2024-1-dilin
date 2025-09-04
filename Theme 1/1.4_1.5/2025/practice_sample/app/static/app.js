@@ -1,207 +1,250 @@
-// Wait for the DOM to be fully loaded before running the script
-document.addEventListener('DOMContentLoaded', () => {
+// Чекаємо, поки весь HTML-документ буде завантажено та розібрано браузером
+document.addEventListener("DOMContentLoaded", () => {
+  // --- СТАН ДОДАТКУ ---
+  // Централізоване сховище для всіх даних про витрати, що виступає як кеш на стороні клієнта.
+  let expenses = [];
+  // Стан сортування: 'none', 'asc', 'desc'
+  let sortState = { column: null, direction: "none" };
 
-    const form = document.getElementById('add-expense-form');
-    const expensesTableBody = document.getElementById('expenses-table-body');
-    const formErrorDiv = document.getElementById('form-error');
-    const listErrorDiv = document.getElementById('list-error');
+  // --- КЕШУВАННЯ DOM-ЕЛЕМЕНТІВ ---
+  // Зберігаємо посилання на елементи, щоб не шукати їх у DOM щоразу.
+  const form = document.getElementById("add-expense-form");
+  const categoryInput = document.getElementById("category");
+  const amountInput = document.getElementById("amount");
+  const thCategory = document.getElementById("th-category");
+  const thAmount = document.getElementById("th-amount");
+  const tableBody = document.getElementById("expenses-table-body");
+  const filterInput = document.getElementById("filter-category");
+  const formError = document.getElementById("form-error");
+  const listError = document.getElementById("list-error");
 
-    // ПРИМІТКА: Додайте input з id="filter-category" у ваш HTML, щоб фільтр працював.
-    // напр., <input type="text" id="filter-category" placeholder="Фільтрувати за категорією...">
-    const filterInput = document.getElementById('filter-category');
+  // --- ФУНКЦІЇ ВЗАЄМОДІЇ З API ---
 
-    let allExpenses = []; // Для зберігання всіх витрат для фільтрації на клієнті
+  /**
+   * Завантажує всі витрати з бекенду, оновлює локальний стан та перемальовує список.
+   */
+  const fetchAndRenderExpenses = async () => {
+    try {
+      const response = await fetch("/api/expenses");
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      expenses = data; // Оновлюємо локальний стан даними з сервера
+      sortState = { column: null, direction: "none" }; // Скидаємо сортування при завантаженні нових даних
+      updateSortIndicators();
+      renderExpenses(); // Перемальовуємо таблицю з новими даними
+    } catch (error) {
+      console.error("Failed to fetch expenses:", error);
+      showError(
+        "list",
+        "Could not load expenses from the server. Please try again later."
+      );
+    }
+  };
 
-    // --- Helper function to prevent XSS by escaping HTML ---
-    function escapeHTML(str) {
-        const p = document.createElement('p');
-        p.appendChild(document.createTextNode(str));
-        return p.innerHTML;
+  // --- ФУНКЦІЯ ВІДОБРАЖЕННЯ ---
+  /**
+   * Відображає поточний стан `expenses` у HTML-таблиці, застосовуючи фільтри.
+   */
+  const renderExpenses = () => {
+    // Очищуємо таблицю та попередні помилки перед оновленням
+    tableBody.innerHTML = "";
+    clearError("list");
+
+    if (expenses.length === 0) {
+      showError(
+        "list",
+        "No expenses added yet. Please add one using the form above."
+      );
+      return;
     }
 
-    // --- Відображає список витрат у таблиці ---
-    const renderExpenses = (expensesToRender) => {
-        expensesTableBody.innerHTML = ''; // Очистити попередні записи
+    let expensesToRender = [...expenses];
 
-        if (expensesToRender.length === 0) {
-            const filterValue = filterInput ? filterInput.value : '';
-            if (filterValue) {
-                expensesTableBody.innerHTML = '<tr><td colspan="3">Витрат за вашим фільтром не знайдено.</td></tr>';
-            } else {
-                expensesTableBody.innerHTML = '<tr><td colspan="3">Витрат не знайдено. Додайте першу!</td></tr>';
-            }
-            return;
+    // --- СОРТУВАННЯ ---
+    if (sortState.direction !== "none") {
+      expensesToRender.sort((a, b) => {
+        // Отримуємо значення для порівняння. Для 'amount' перетворюємо в число.
+        const valA =
+          sortState.column === "amount"
+            ? parseFloat(a[sortState.column])
+            : a[sortState.column];
+        const valB =
+          sortState.column === "amount"
+            ? parseFloat(b[sortState.column])
+            : b[sortState.column];
+
+        let comparison = 0;
+        if (typeof valA === "string") {
+          comparison = valA.localeCompare(valB, undefined, {
+            sensitivity: "base",
+          });
+        } else {
+          comparison = valA - valB;
         }
 
-        expensesToRender.forEach(expense => {
-            const row = document.createElement('tr');
-            row.innerHTML = `
+        // Якщо напрямок 'desc', інвертуємо результат порівняння
+        return sortState.direction === "asc" ? comparison : -comparison;
+      });
+    }
+
+    // --- ФІЛЬТРАЦІЯ ---
+    const filterText = filterInput.value.toLowerCase();
+    const filteredExpenses = expensesToRender.filter((expense) =>
+      expense.category.toLowerCase().includes(filterText)
+    );
+
+    if (filteredExpenses.length === 0) {
+      showError("list", "No expenses match the current filter.");
+      return;
+    }
+
+    filteredExpenses.forEach((expense) => {
+      const row = tableBody.insertRow();
+      // Використовуємо ID з бази даних (`expense_id`) для атрибута dataset
+      row.dataset.id = expense.expense_id;
+
+      // Використовуємо шаблонні рядки для чистоти коду
+      row.innerHTML = `
                 <td>${escapeHTML(expense.category)}</td>
-                <td>$${parseFloat(expense.amount).toFixed(2)}</td>
-                <td>
-                    <button class="delete-btn" data-id="${expense.expense_id}">Delete</button>
-                </td>
+                <td>${parseFloat(expense.amount).toFixed(2)}</td>
+                <td><button class="delete-btn">Delete</button></td>
             `;
-            expensesTableBody.appendChild(row);
-        });
-    };
+    });
+  };
 
-    // --- Sorting state ---
-    let sortState = {
-        column: null, // 'category' or 'amount'
-        direction: null // null | 'asc' | 'desc'
-    };
+  // --- ОБРОБНИКИ ПОДІЙ ---
 
-    // --- Sorting function ---
-    function sortExpenses(expenses) {
-        if (!sortState.column || !sortState.direction) return expenses;
-        const sorted = [...expenses];
-        sorted.sort((a, b) => {
-            let valA = a[sortState.column];
-            let valB = b[sortState.column];
-            if (sortState.column === 'amount') {
-                valA = parseFloat(valA);
-                valB = parseFloat(valB);
-            } else {
-                valA = valA.toLowerCase();
-                valB = valB.toLowerCase();
-            }
-            if (valA < valB) return sortState.direction === 'asc' ? -1 : 1;
-            if (valA > valB) return sortState.direction === 'asc' ? 1 : -1;
-            return 0;
+  /**
+   * Обробляє відправку форми для додавання нової витрати.
+   */
+  const handleAddExpense = async (e) => {
+    e.preventDefault(); // Запобігаємо стандартній поведінці форми (перезавантаженню сторінки)
+
+    const category = categoryInput.value.trim();
+    const amount = amountInput.value.trim();
+
+    if (!category || !amount) {
+      showError("form", "Please fill in all fields.");
+      return;
+    }
+    clearError("form");
+
+    try {
+      const response = await fetch("/api/expenses", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ category, amount }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to add expense.");
+      }
+
+      form.reset(); // Очищуємо поля форми
+      categoryInput.focus(); // Повертаємо фокус на перше поле для зручності
+
+      // Повторно завантажуємо всі витрати, щоб UI був синхронізований з сервером
+      await fetchAndRenderExpenses();
+    } catch (error) {
+      console.error("Failed to add expense:", error);
+      showError("form", error.message);
+    }
+  };
+
+  /**
+   * Обробляє видалення витрати (використовує делегування подій).
+   */
+  const handleDeleteExpense = async (e) => {
+    // Перевіряємо, чи був клік саме на кнопці з класом 'delete-btn'
+    if (e.target.classList.contains("delete-btn")) {
+      const row = e.target.closest("tr");
+      const expenseId = parseInt(row.dataset.id, 10);
+
+      if (isNaN(expenseId)) return;
+
+      try {
+        const response = await fetch(`/api/expenses/${expenseId}`, {
+          method: "DELETE",
         });
-        return sorted;
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || "Failed to delete expense.");
+        }
+
+        // Повторно завантажуємо дані для оновлення списку — простий та надійний спосіб синхронізації
+        await fetchAndRenderExpenses();
+      } catch (error) {
+        console.error("Failed to delete expense:", error);
+        showError("list", error.message);
+      }
+    }
+  };
+
+  /**
+   * Обробляє клік по заголовку таблиці для сортування.
+   * @param {string} column - Назва стовпця ('category' або 'amount').
+   */
+  const handleSort = (column) => {
+    if (sortState.column === column) {
+      // Циклічна зміна напрямку: asc -> desc -> none
+      if (sortState.direction === "asc") {
+        sortState.direction = "desc";
+      } else if (sortState.direction === "desc") {
+        sortState.direction = "none";
+        sortState.column = null;
+      }
+    } else {
+      // Новий стовпець для сортування, починаємо з 'asc'
+      sortState.column = column;
+      sortState.direction = "asc";
     }
 
-    // --- Modified filter and render ---
-    const applyFilterAndRender = () => {
-        const filterText = filterInput ? filterInput.value.toLowerCase().trim() : '';
-        let filteredExpenses = allExpenses.filter(expense =>
-            !filterText || expense.category.toLowerCase().startsWith(filterText)
-        );
-        filteredExpenses = sortExpenses(filteredExpenses);
-        renderExpenses(filteredExpenses);
-    };
+    updateSortIndicators();
+    renderExpenses();
+  };
 
-    // --- (1) Отримує витрати з сервера ---
-    const fetchAndRenderExpenses = async () => {
-        try {
-            const response = await fetch('/api/expenses');
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
-            }
-            allExpenses = await response.json();
-            listErrorDiv.textContent = '';
-            applyFilterAndRender(); // Застосувати поточний фільтр до нових даних
-        } catch (error) {
-            console.error('Error fetching expenses:', error);
-            listErrorDiv.textContent = 'Failed to load expenses. Please try again later.';
+  /**
+   * Оновлює візуальні індикатори сортування в заголовках таблиці.
+   */
+  const updateSortIndicators = () => {
+    const headers = [thCategory, thAmount];
+    headers.forEach((th) => {
+      th.classList.remove("sort-asc", "sort-desc");
+      if (th.dataset.column === sortState.column) {
+        // Додаємо клас, тільки якщо є активне сортування
+        if (sortState.direction !== "none") {
+          th.classList.add(`sort-${sortState.direction}`);
         }
-    };
-
-    // --- (2) Handle form submission to POST a new expense ---
-    form.addEventListener('submit', async (event) => {
-        event.preventDefault(); // Prevent default page reload
-
-        const category = document.getElementById('category').value;
-        const amount = document.getElementById('amount').value;
-
-        // Basic validation
-        if (!category.trim() || !amount) {
-            formErrorDiv.textContent = 'Category and Amount are required.';
-            return;
-        }
-
-        const newExpense = {
-            category: category.trim(),
-            amount: amount,
-        };
-
-        try {
-            const response = await fetch('/api/expenses', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(newExpense),
-            });
-
-            const result = await response.json();
-
-            if (!response.ok) {
-                // (4) Show API error message from the server
-                throw new Error(result.error || 'Failed to add expense.');
-            }
-
-            // Clear form and errors, then refresh the list
-            form.reset();
-            formErrorDiv.textContent = '';
-            await fetchAndRenderExpenses();
-
-        } catch (error) {
-            console.error('Error adding expense:', error);
-            formErrorDiv.textContent = error.message;
-        }
+      }
     });
+  };
 
-    // --- (3) Handle delete button clicks using event delegation ---
-    expensesTableBody.addEventListener('click', async (event) => {
-        if (event.target.classList.contains('delete-btn')) {
-            const expenseId = event.target.dataset.id;
-            
-            if (!confirm('Are you sure you want to delete this expense?')) {
-                return;
-            }
+  // --- ДОПОМІЖНІ ФУНКЦІЇ ---
+  const showError = (type, message) => {
+    const errorElement = type === "form" ? formError : listError;
+    errorElement.textContent = message;
+  };
+  const clearError = (type) => {
+    const errorElement = type === "form" ? formError : listError;
+    errorElement.textContent = "";
+  };
+  // Проста функція для екранування HTML для запобігання XSS-атак
+  const escapeHTML = (str) => str.replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-            try {
-                const response = await fetch(`/api/expenses/${expenseId}`, { method: 'DELETE' });
-                if (!response.ok) {
-                    const result = await response.json();
-                    throw new Error(result.error || 'Failed to delete expense.');
-                }
-                // Refresh the list to show the item has been removed
-                await fetchAndRenderExpenses();
-            } catch (error) {
-                console.error('Error deleting expense:', error);
-                listErrorDiv.textContent = error.message;
-            }
-        }
-    });
+  // --- РЕЄСТРАЦІЯ ОБРОБНИКІВ ПОДІЙ ---
+  form.addEventListener("submit", handleAddExpense);
+  tableBody.addEventListener("click", handleDeleteExpense); // Один слухач на всю таблицю!
+  thCategory.addEventListener("click", () => handleSort("category"));
+  thAmount.addEventListener("click", () => handleSort("amount"));
+  filterInput.addEventListener("input", renderExpenses); // 'input' реагує на будь-які зміни в полі
 
-    // --- Обробка фільтрації під час введення тексту ---
-    if (filterInput) {
-        filterInput.addEventListener('input', applyFilterAndRender);
-    }
-
-    // --- Handle header clicks for sorting ---
-    document.getElementById('th-category').addEventListener('click', () => {
-        if (sortState.column !== 'category') {
-            sortState.column = 'category';
-            sortState.direction = 'asc';
-        } else if (sortState.direction === 'asc') {
-            sortState.direction = 'desc';
-        } else if (sortState.direction === 'desc') {
-            sortState.direction = null;
-            sortState.column = null;
-        } else {
-            sortState.direction = 'asc';
-        }
-        applyFilterAndRender();
-    });
-
-    document.getElementById('th-amount').addEventListener('click', () => {
-        if (sortState.column !== 'amount') {
-            sortState.column = 'amount';
-            sortState.direction = 'asc';
-        } else if (sortState.direction === 'asc') {
-            sortState.direction = 'desc';
-        } else if (sortState.direction === 'desc') {
-            sortState.direction = null;
-            sortState.column = null;
-        } else {
-            sortState.direction = 'asc';
-        }
-        applyFilterAndRender();
-    });
-
-    // Initial load of expenses when the page is ready
-    fetchAndRenderExpenses();
+  // --- ПОЧАТКОВЕ ВІДОБРАЖЕННЯ ---
+  // Завантажуємо та відображаємо початковий список витрат при завантаженні сторінки.
+  fetchAndRenderExpenses();
 });
